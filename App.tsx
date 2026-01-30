@@ -414,7 +414,7 @@ const App: React.FC = () => {
                                   <span className="text-white font-bold">무료</span>
                               </li>
                               <li className="flex justify-between">
-                                  <span>심층 분석 (커피 후원)</span>
+                                  <span>심층 분석 </span>
                                   <span className="text-white font-bold">4,900원</span>
                               </li>
                               <li className="flex justify-between">
