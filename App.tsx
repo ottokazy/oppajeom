@@ -7,9 +7,9 @@ import { ProgramMode } from './components/ProgramMode';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-// [FIX] 로컬 파일(yin_yang_cat.png)이 현재 환경에 없어서 안 나오는 것입니다.
-// 다시 외부 URL을 연결하여 화면이 정상적으로 나오게 수정합니다.
-const MAIN_IMG_URL = "https://images.unsplash.com/photo-1518133524672-243e33dc72b3?q=80&w=1000&auto=format&fit=crop"; 
+// [FIX] 구글 드라이브 링크가 차단되는 문제를 해결하기 위해, 
+// 외부 의존성 없이 무조건 화면에 출력되는 '태극 문양 SVG 코드'로 교체했습니다.
+const MAIN_IMG_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23eebd2b;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23b58900;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='%231a1a1a' stroke='%23eebd2b' stroke-width='1.5'/%3E%3Cpath d='M50,2 A48,48 0 0,1 50,98 A24,24 0 0,1 50,50 A24,24 0 0,0 50,2' fill='url(%23grad)'/%3E%3Ccircle cx='50' cy='26' r='5' fill='%231a1a1a'/%3E%3Ccircle cx='50' cy='74' r='5' fill='%23eebd2b'/%3E%3C/svg%3E";
 
 const KAKAO_JS_KEY = 'c089c8172def97eb00c07217cae174e6'; 
 const OFFICIAL_DOMAIN = "https://www.oppajeom.com";
@@ -42,6 +42,8 @@ const App: React.FC = () => {
   
   // Modes
   const [isProgramMode, setIsProgramMode] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false); // [New] Business Info Modal
+  
   // [UX Update] Allow starting ProgramMode in specific view (e.g. LOGIN)
   const [programStartView, setProgramStartView] = useState<'ONBOARDING' | 'LOGIN'>('ONBOARDING');
 
@@ -101,15 +103,15 @@ const App: React.FC = () => {
 
   useEffect(() => { window.scrollTo(0, 0); }, [step, premiumStep]);
   
-  // [UX Enhancement] Premium Q&A Scroll Lock
+  // [UX Enhancement] Scroll Lock
   useEffect(() => {
-      if (premiumStep !== PremiumStep.IDLE) {
+      if (premiumStep !== PremiumStep.IDLE || showInfoModal) {
           document.body.style.overflow = 'hidden';
       } else {
           document.body.style.overflow = 'unset';
       }
       return () => { document.body.style.overflow = 'unset'; };
-  }, [premiumStep]);
+  }, [premiumStep, showInfoModal]);
 
   useEffect(() => {
     // Trigger animation for both Main Analysis AND Premium Analysis
@@ -390,6 +392,71 @@ const App: React.FC = () => {
         />
       )}
 
+      {/* Business Info Modal (PG Requirement) */}
+      {showInfoModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center px-4 bg-black/80 backdrop-blur-sm animate-fade-in-slow" onClick={() => setShowInfoModal(false)}>
+              <div className="bg-[#1f1b15] border border-[#eebd2b]/20 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto relative shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => setShowInfoModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+                      <span className="material-symbols-outlined">close</span>
+                  </button>
+                  
+                  <h3 className="text-lg font-serif font-bold text-[#eebd2b] mb-6 border-b border-white/10 pb-4">
+                      서비스 정보 및 사업자 안내
+                  </h3>
+
+                  <div className="space-y-6 text-sm text-gray-300 font-light">
+                      {/* 1. Products */}
+                      <div>
+                          <h4 className="font-bold text-white mb-2 text-xs uppercase tracking-wider text-[#eebd2b]/80">제공 서비스 및 가격</h4>
+                          <ul className="space-y-2 text-xs">
+                              <li className="flex justify-between">
+                                  <span>기본 주역 점괘</span>
+                                  <span className="text-white font-bold">무료</span>
+                              </li>
+                              <li className="flex justify-between">
+                                  <span>심층 분석 (커피 후원)</span>
+                                  <span className="text-white font-bold">4,900원</span>
+                              </li>
+                              <li className="flex justify-between">
+                                  <span>월간 화두 구독 (4주)</span>
+                                  <span className="text-white font-bold">9,900원</span>
+                              </li>
+                          </ul>
+                          <p className="text-[10px] text-gray-500 mt-2">
+                              * 본 서비스는 AI를 활용한 주역 분석 및 생성형 콘텐츠입니다.
+                          </p>
+                      </div>
+
+                      {/* 2. Refund */}
+                      <div>
+                          <h4 className="font-bold text-white mb-2 text-xs uppercase tracking-wider text-[#eebd2b]/80">환불 및 취소 규정</h4>
+                          <p className="text-xs leading-relaxed text-gray-400">
+                              본 서비스는 <span className="text-red-400 font-bold">디지털 콘텐츠</span>로, 결제 후 콘텐츠(점괘 분석, 화두 카드 등)가 제공된 이후에는 환불이 불가능합니다.<br/>
+                              단, 시스템 오류로 인해 콘텐츠가 정상적으로 제공되지 않은 경우 전액 환불 조치됩니다.
+                          </p>
+                      </div>
+
+                      {/* 3. Business Info (Placeholders) */}
+                      <div>
+                          <h4 className="font-bold text-white mb-2 text-xs uppercase tracking-wider text-[#eebd2b]/80">사업자 정보</h4>
+                          <div className="grid grid-cols-[70px_1fr] gap-y-1 text-xs text-gray-400">
+                              <span>상호명</span> <span>[애월에서]</span>
+                              <span>대표자</span> <span>[조희제]</span>
+                              <span>사업자번호</span> <span>[341-23-01423]</span>
+                              <span>주소</span> <span>[제주특별자치도 제주시 애월읍 광상로 305]</span>
+                              <span>전화번호</span> <span>[010-4745-2249]</span>
+                              <span>이메일</span> <span>[from.mr.ouyaa@gmail.com]</span>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <div className="mt-8 pt-6 border-t border-white/10 text-center">
+                       <p className="text-[10px] text-gray-600">© 2024 Oppajeom. All rights reserved.</p>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Premium Q&A Modal Layer */}
       {premiumStep !== PremiumStep.IDLE && (
           <div className="fixed inset-0 z-[100] h-[100dvh] w-screen bg-[#2a261f] flex flex-col items-center overflow-y-auto animate-fade-in-slow">
@@ -524,7 +591,7 @@ const App: React.FC = () => {
                 
                 {/* Image Container with Slow Spin */}
                 <div className="relative w-full h-full rounded-full overflow-hidden shadow-2xl border border-white/10 animate-[spin_60s_linear_infinite]">
-                    {/* 👇 다시 인터넷 주소로 교체 */}
+                    {/* 👇 직접 링크 변환 적용 완료 */}
                     <img 
                         src={MAIN_IMG_URL} 
                         alt="오빠가 점바주까 메인" 
@@ -556,6 +623,16 @@ const App: React.FC = () => {
             </div>
 
             <button onClick={() => setStep(Step.INPUT)} className="w-full max-w-[260px] bg-[#eebd2b] hover:bg-[#d4a825] text-[#1a1917] font-bold py-4 rounded-xl transition-all duration-300 shadow-xl text-lg">질문 시작하기</button>
+
+            {/* [New] Footer with Info Modal Trigger */}
+            <div className="absolute bottom-6 w-full flex justify-center z-20">
+                <button 
+                    onClick={() => setShowInfoModal(true)}
+                    className="text-[10px] text-gray-500 hover:text-[#eebd2b] border-b border-transparent hover:border-[#eebd2b] transition-all pb-0.5 opacity-60 hover:opacity-100 tracking-wide"
+                >
+                    사업자 정보 · 이용약관 · 상품안내
+                </button>
+            </div>
         </div>
       )}
 
