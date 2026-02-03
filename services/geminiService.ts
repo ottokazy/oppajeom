@@ -78,7 +78,7 @@ const HANJA_DICTIONARY = `
 1. **元 (원)**: **'크게, 큰'**. (시작보다는 확장의 의미)
 2. **亨 (형)**: **'제사를 지내다, 간절히 마음을 빌다'**. (단순한 형통함이 아니라 정성을 다하는 행위)
 3. **貞 (정)**: **'점을 치다, 앞으로, 미래에'**. (단순한 올바름이 아니라 미래에 대한 예측과 태도)
-4. **利貞 (이정)**: **'앞날이 밝다'**. (미래가 유리하게 전개됨)
+4. **利貞 (이정)**: **'앞날이 밝다'**. (미래에 유리하게 전개됨)
 5. **安貞 (안정)**: **'편한 마음으로 미래를 생각하다'**. (불안해하지 않는 태도)
 6. **永貞 (영정)**: **'오래된 약속을 지킴'**. (변치 않는 신의)
 7. **吝 (인)**: **'안타깝다'**. (능력이 부족하거나 타이밍을 놓쳐 부끄러운 상태)
@@ -177,7 +177,6 @@ export const interpretHexagram = async (
   const knownHexagram = HEXAGRAM_TABLE[binaryKey] || { name: "알 수 없는 괘", hanja: "Unknown", gwaesa: "", hyosa: [] };
 
   // 2. Custom Interpretation (Internal Knowledge Injection)
-  // 사용자의 연구 노트를 'AI의 내재 지식'처럼 보이게 하기 위해 라벨을 변경합니다.
   const customInterpretationText = CUSTOM_INTERPRETATIONS[binaryKey] 
     ? `
     ================================================================================
@@ -206,8 +205,6 @@ export const interpretHexagram = async (
     
     const genAI = new GoogleGenAI({ apiKey: apiKey });
 
-    // Construct the Reference Text for Grounding
-    // This ensures the AI uses the EXACT Hanja provided by the user.
     let referenceText = `
     [⭐ 필수 참조: 정확한 원문 데이터 (Grounding Data)]
     다음 한자 원문을 그대로 인용하여 해석하십시오. 다른 글자를 쓰지 마십시오.
@@ -242,95 +239,69 @@ export const interpretHexagram = async (
       ${lines.map((l, i) => `${i+1}효: ${l} (${l === 6 || l === 9 ? '동효 - 변함' : '정효 - 안변함'})`).join('\n')}
 
       위 정보를 바탕으로 JSON 포맷에 맞춰 응답하십시오.
-
-      **필수 수행 과제**:
-      1. 'hexagram': 
-         - **statement_hanja**: 위 [필수 참조]에 제공된 '괘사 원문'을 그대로 사용할 것.
-         - **explanation**: [학자 모드] 사용자의 사적인 상황 연계를 최소화(10% 미만). [심층 해석 데이터]를 본인의 지식으로 체화하여 500자 내외 기술 (문단 분리 필수).
-      2. 'lines': 
-         - **hanja**: 위 [필수 참조]에 제공된 해당 순서의 '효사 원문'을 그대로 사용할 것.
-         - **explanation**: [학자 모드] **모든 효(정효 포함)**에 대해 300자 이상 상세 풀이. 원문의 속뜻을 쉽고 유려한 언어로 먼저 설명하고, 그 이유를 효의 위치나 성질로 보충 설명할 것. 딱딱한 분석보다는 이해하기 쉬운 비유와 흐름을 중시할 것. '한자 사전'은 원문에 글자가 있을 때만 적용.
-      3. 'advice': [전략가 모드] 
-         - **절대 금기**: '운', '운명', '팔자' 사용 금지. 또한 '연구 노트' 등 자료 언급 금지.
-         - 학자의 해석과 주역의 이치를 현실 상황(질문)에 대입하여 분석.
-         - **근거 제시**: 주역 텍스트나 괘상과의 연결은 **꼭 필요한 경우에만** 언급하여 설득력을 높일 것. (빈도 조절)
-         - **MBTI 반영**: 사용자의 MBTI(${user.mbti || '없음'}) 성향을 10% 정도 고려하여 톤앤매너를 조정할 것.
-         - **전문 용어 금지**: 심리학/정치학 용어 사용 금지. 쉬운 말로 풀어서 설명.
-         - 분석은 날카롭게 하되, 어조는 부드럽게 유지할 것.
-         - **분량 증량**: 공백 포함 2500자 이상 상세히 기술.
-         - **가독성**: 소제목 아래 내용을 통으로 쓰지 말고, 반드시 문단을 나누어 가독성을 높일 것.
-      4. 'coreSummary': 3줄 요약.
     `;
 
+    // RESTORED: Standard await without Promise.race timeout
     const response = await genAI.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            hexagram: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                hanja: { type: Type.STRING },
-                statement_hanja: { type: Type.STRING },
-                statement_translation: { type: Type.STRING },
-                explanation: { type: Type.STRING, description: "Scholarly interpretation based on Archeology & Classics. Minimal personal context. ~500 chars, separated paragraphs." }
-              },
-              required: ["name", "hanja", "statement_hanja", "statement_translation", "explanation"]
-            },
-            lines: {
-              type: Type.ARRAY,
-              items: {
+        model,
+        contents: prompt,
+        config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: "application/json",
+            safetySettings: [
+                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            ],
+            responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                  position: { type: Type.INTEGER },
-                  hanja: { type: Type.STRING },
-                  translation: { type: Type.STRING },
-                  explanation: { type: Type.STRING, description: "Detailed interpretation (~300 chars). Story & Meaning FIRST, technical analysis SECOND. Easy, flowing language with scholarly quotes." },
-                  isChanging: { type: Type.BOOLEAN }
+                    hexagram: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING },
+                            hanja: { type: Type.STRING },
+                            statement_hanja: { type: Type.STRING },
+                            statement_translation: { type: Type.STRING },
+                            explanation: { type: Type.STRING, description: "Scholarly interpretation based on Archeology & Classics. Minimal personal context. ~500 chars, separated paragraphs." }
+                        },
+                        required: ["name", "hanja", "statement_hanja", "statement_translation", "explanation"]
+                    },
+                    lines: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                position: { type: Type.INTEGER },
+                                hanja: { type: Type.STRING },
+                                translation: { type: Type.STRING },
+                                explanation: { type: Type.STRING, description: "Detailed interpretation (~300 chars). Story & Meaning FIRST, technical analysis SECOND. Easy, flowing language with scholarly quotes." },
+                                isChanging: { type: Type.BOOLEAN }
+                            },
+                            required: ["position", "hanja", "translation", "explanation", "isChanging"]
+                        }
+                    },
+                    changedHexagramName: { type: Type.STRING },
+                    advice: { type: Type.STRING, description: "Strategic advice applying I Ching logic to reality. NO FATE/DESTINY words. NO 'according to note' phrases. Focus on situation & response. Easy language. ~2500 chars with good paragraph spacing." },
+                    coreSummary: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING }
+                    }
                 },
-                required: ["position", "hanja", "translation", "explanation", "isChanging"]
-              }
-            },
-            changedHexagramName: { type: Type.STRING },
-            advice: { type: Type.STRING, description: "Strategic advice applying I Ching logic to reality. NO FATE/DESTINY words. NO 'according to note' phrases. Focus on situation & response. Easy language. ~2500 chars with good paragraph spacing." },
-            coreSummary: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
+                required: ["hexagram", "lines", "advice", "coreSummary"]
             }
-          },
-          required: ["hexagram", "lines", "advice", "coreSummary"]
         }
-      }
     });
 
-    if (response.text) {
+    if (response && response.text) {
       const parsedResult = parseJSONSafely(response.text) as AnalysisResult;
 
-      // [CRITICAL FIX] AI Hallucination Protection
-      // AI가 한자 원문을 영어로 번역하거나("我" -> "me") 실수할 수 있으므로,
-      // 신뢰할 수 있는 소스(HEXAGRAM_TABLE)의 데이터로 강제 덮어쓰기 합니다.
-
-      // 1. 괘사 원문 덮어쓰기
       if (knownHexagram.gwaesa) {
           parsedResult.hexagram.statement_hanja = knownHexagram.gwaesa;
       }
-
-      // 2. 효사 원문 덮어쓰기
       if (parsedResult.lines && Array.isArray(parsedResult.lines) && knownHexagram.hyosa) {
           parsedResult.lines = parsedResult.lines.map((line, index) => {
-               // lines 배열은 1효부터 6효 순서라고 가정 (index 0 = 1효)
-               // knownHexagram.hyosa도 0=1효, 5=6효로 매핑되어 있음
                const originalHanja = knownHexagram.hyosa[index];
                if (originalHanja) {
                    return { ...line, hanja: originalHanja };
@@ -345,6 +316,7 @@ export const interpretHexagram = async (
 
   } catch (error: any) {
     console.error("Gemini interpretation failed:", error);
+    // Fallback logic remains just in case of actual API failure
     return {
       hexagram: { 
         name: knownHexagram.name, 
@@ -439,6 +411,7 @@ export const interpretPremiumQuestions = async (
   `;
 
   try {
+      // RESTORED: Standard await without Promise.race timeout
       const response = await genAI.models.generateContent({
         model,
         contents: prompt,
@@ -451,19 +424,16 @@ export const interpretPremiumQuestions = async (
       const text = response.text;
       if (!text) return "분석 결과가 비어있습니다.";
 
-      // JSON Parsing Logic to extract only the text
       try {
           const parsed = parseJSONSafely(text);
-          // Return the 'advice' field if it exists, otherwise fallback to text
           return parsed.advice || parsed.text || text; 
       } catch (e) {
-          // If parsing fails but we have text, return the text (it might be raw text already)
           console.warn("Premium JSON parse failed, returning raw text", e);
           return text;
       }
 
   } catch (error) {
       console.error("Premium analysis failed", error);
-      throw new Error("심층 분석 오류");
+      return "심층 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
   }
 };

@@ -1,15 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UserContext, LineValue, AnalysisResult } from './types';
 import { interpretHexagram, interpretPremiumQuestions } from './services/geminiService';
+import { createSubscription, triggerAlimTalk, getSubscriptionByPhone } from './services/programService';
 import { CoinAnimation } from './components/CoinAnimation';
 import { HexagramDisplay } from './components/HexagramDisplay';
 import { ProgramMode } from './components/ProgramMode';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-// [FIX] 구글 드라이브 링크가 차단되는 문제를 해결하기 위해, 
-// 외부 의존성 없이 무조건 화면에 출력되는 '태극 문양 SVG 코드'로 교체했습니다.
-const MAIN_IMG_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23eebd2b;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23b58900;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='%231a1a1a' stroke='%23eebd2b' stroke-width='1.5'/%3E%3Cpath d='M50,2 A48,48 0 0,1 50,98 A24,24 0 0,1 50,50 A24,24 0 0,0 50,2' fill='url(%23grad)'/%3E%3Ccircle cx='50' cy='26' r='5' fill='%231a1a1a'/%3E%3Ccircle cx='50' cy='74' r='5' fill='%23eebd2b'/%3E%3C/svg%3E";
+// [이미지 설정 가이드]
+// 1. 깃허브에 올린 이미지 파일을 클릭하세요.
+// 2. 우측 상단의 'Raw' 버튼을 우클릭하거나 클릭하여 '이미지 주소 복사'를 하세요.
+//    (주소가 https://raw.githubusercontent.com/... 으로 시작해야 외부에서 보입니다.)
+// 3. 아래 따옴표("") 안에 복사한 주소를 붙여넣으세요.
+const GITHUB_IMG_URL = ""; 
+
+// 기본 태극 문양 (이미지가 없을 경우 사용됨)
+const DEFAULT_SVG_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23eebd2b;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23b58900;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='%231a1a1a' stroke='%23eebd2b' stroke-width='1.5'/%3E%3Cpath d='M50,2 A48,48 0 0,1 50,98 A24,24 0 0,1 50,50 A24,24 0 0,0 50,2' fill='url(%23grad)'/%3E%3Ccircle cx='50' cy='26' r='5' fill='%231a1a1a'/%3E%3Ccircle cx='50' cy='74' r='5' fill='%23eebd2b'/%3E%3C/svg%3E";
+
+const MAIN_IMG_URL = GITHUB_IMG_URL || DEFAULT_SVG_URL;
 
 const KAKAO_JS_KEY = 'c089c8172def97eb00c07217cae174e6'; 
 const OFFICIAL_DOMAIN = "https://www.oppajeom.com";
@@ -43,6 +52,8 @@ const App: React.FC = () => {
   // Modes
   const [isProgramMode, setIsProgramMode] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false); // [New] Business Info Modal
+  const [isRestoring, setIsRestoring] = useState(false); // [UX] Restore Loading State
+  const [isRestoreFailed, setIsRestoreFailed] = useState(false); // [UX] Restore Failed State (Manual Retry)
   
   // [UX Update] Allow starting ProgramMode in specific view (e.g. LOGIN)
   const [programStartView, setProgramStartView] = useState<'ONBOARDING' | 'LOGIN'>('ONBOARDING');
@@ -53,7 +64,7 @@ const App: React.FC = () => {
   const [premiumStep, setPremiumStep] = useState<PremiumStep>(PremiumStep.IDLE);
   const [premiumQuestions, setPremiumQuestions] = useState({ q1: '', q2: '' });
   const [premiumAdvice, setPremiumAdvice] = useState<string>('');
-
+  
   const [progress, setProgress] = useState(0);
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const loadingMessages = [
@@ -65,6 +76,7 @@ const App: React.FC = () => {
   const topRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null); // For PDF Capture
   const premiumContentRef = useRef<HTMLDivElement>(null); // For Premium PDF Capture
+  const analysisStartedRef = useRef(false); // Prevent double analysis
 
   const mbtiTypes = [
     "ISTJ", "ISFJ", "INFJ", "INTJ",
@@ -81,37 +93,166 @@ const App: React.FC = () => {
     backgroundPosition: '0 0, 12px 12px'
   };
 
+  // [Restore Logic] Restore state from sessionStorage after payment redirect
   useEffect(() => {
+    // 1. Initial SDK Setup
     if (window.Kakao && !window.Kakao.isInitialized()) {
         try { window.Kakao.init(KAKAO_JS_KEY); } catch (e) {}
     }
-    if (window.IMP) window.IMP.init("imp46424443"); 
+    if (window.IMP) {
+        window.IMP.init("imp16601765"); 
+    }
     
-    // [UX Update] Check for URL Query Params (Direct Login Link)
+    // Check URL Params
     const params = new URLSearchParams(window.location.search);
+    const impSuccess = params.get('imp_success');
+    const errorMsg = params.get('error_msg');
     const mode = params.get('mode');
     
-    if (mode === 'login') {
-        // Direct entry to Program Mode Login
-        setProgramStartView('LOGIN');
-        setIsProgramMode(true);
-        
-        // Clean up URL to avoid re-triggering on refresh (optional but good UX)
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    // [CRITICAL FIX] 2. Payment Return Handler FIRST
+    const isPaymentReturn = sessionStorage.getItem('oppajeom_payment_pending');
+
+    const restoreState = async () => {
+        if (isPaymentReturn) {
+            setIsRestoring(true); // Show loading overlay
+
+            try {
+                // Restore Context
+                const savedContext = JSON.parse(sessionStorage.getItem('oppajeom_context') || '{}');
+                const savedLines = JSON.parse(sessionStorage.getItem('oppajeom_lines') || '[]');
+                const savedAnalysis = JSON.parse(sessionStorage.getItem('oppajeom_analysis') || 'null');
+                const savedPremiumQ = JSON.parse(sessionStorage.getItem('oppajeom_premium_q') || '{}');
+                const savedIsProgramMode = sessionStorage.getItem('oppajeom_is_program_mode') === 'true';
+
+                // Apply Restore
+                if (savedContext.name) setUserContext(savedContext);
+                if (savedLines.length) setLines(savedLines);
+                if (savedAnalysis) setAnalysis(savedAnalysis);
+                if (savedPremiumQ.q1) setPremiumQuestions(savedPremiumQ);
+
+                // Clear Flag
+                sessionStorage.removeItem('oppajeom_payment_pending');
+
+                if (impSuccess === 'true') {
+                    // Success Logic
+                    if (savedIsProgramMode) {
+                        // [CRITICAL FIX] Mobile subscription flow restoration
+                        const savedPhone = sessionStorage.getItem('oppajeom_phone');
+                        if (savedPhone) {
+                            // 1. Check if sub already exists (Idempotency)
+                            const existingSub = await getSubscriptionByPhone(savedPhone);
+                            if (existingSub) {
+                                // Already created? just go.
+                                console.log("Subscription already exists.");
+                            } else {
+                                // 2. Create new
+                                const newSub = await createSubscription(savedContext, savedLines, savedPhone);
+                                if (!newSub) throw new Error("Subscription creation returned null");
+                                await triggerAlimTalk(savedPhone, savedContext.name, 1);
+                            }
+                            
+                            // [AUTO LOGIN FLAG]
+                            sessionStorage.setItem('oppajeom_auto_login', 'true');
+                        }
+                        setIsProgramMode(true);
+                        setProgramStartView('LOGIN'); 
+                    } else {
+                        // For Premium Q&A
+                        setStep(Step.ADVICE); 
+                        setPremiumStep(PremiumStep.ANALYZING);
+                        
+                        // Trigger Analysis
+                        try {
+                            const result = await interpretPremiumQuestions(savedContext, savedAnalysis, savedPremiumQ, savedLines);
+                            setPremiumAdvice(result);
+                            setPremiumStep(PremiumStep.RESULT);
+                        } catch (e) {
+                            alert("분석 중 오류가 발생했습니다.");
+                            setPremiumStep(PremiumStep.INPUT);
+                        }
+                    }
+                } else if (errorMsg) {
+                    // Failure Logic
+                    alert(`결제가 취소되었거나 실패했습니다.\n내용: ${errorMsg}`);
+                    if (savedIsProgramMode) {
+                        setIsProgramMode(true);
+                    } else {
+                        setStep(Step.ADVICE);
+                        setPremiumStep(PremiumStep.INPUT);
+                    }
+                } else {
+                    // Reload case
+                     if (savedIsProgramMode) setIsProgramMode(true);
+                     else if (savedAnalysis) setStep(Step.ADVICE);
+                }
+                
+                setIsRestoring(false); 
+                window.history.replaceState({}, document.title, window.location.pathname);
+
+            } catch (err) {
+                console.error("Critical Restore Error:", err);
+                // [MANUAL RETRY] Show retry UI instead of crashing/redirecting
+                setIsRestoring(false);
+                setIsRestoreFailed(true);
+            }
+            return;
+        }
+
+        // 3. Direct Link Handler (Only if NOT payment return)
+        if (mode === 'login') {
+            setProgramStartView('LOGIN');
+            setIsProgramMode(true);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+        }
+    };
+
+    restoreState();
   }, []);
+
+  const handleManualRetry = async () => {
+      setIsRestoreFailed(false);
+      setIsRestoring(true);
+      
+      try {
+          const savedContext = JSON.parse(sessionStorage.getItem('oppajeom_context') || '{}');
+          const savedLines = JSON.parse(sessionStorage.getItem('oppajeom_lines') || '[]');
+          const savedPhone = sessionStorage.getItem('oppajeom_phone');
+
+          if (savedPhone) {
+              const existingSub = await getSubscriptionByPhone(savedPhone);
+              if (!existingSub) {
+                  const newSub = await createSubscription(savedContext, savedLines, savedPhone);
+                  if (!newSub) throw new Error("Retry failed");
+                  await triggerAlimTalk(savedPhone, savedContext.name, 1);
+              }
+              sessionStorage.setItem('oppajeom_auto_login', 'true');
+              setIsProgramMode(true);
+              setProgramStartView('LOGIN');
+          } else {
+              alert("저장된 연락처 정보가 없습니다. 처음부터 다시 시도해주세요.");
+              setStep(Step.LANDING);
+          }
+      } catch (e) {
+          console.error(e);
+          alert("설정 완료에 실패했습니다. 관리자에게 문의해주세요.");
+          setIsRestoreFailed(true); // Show retry again
+      } finally {
+          setIsRestoring(false);
+      }
+  };
 
   useEffect(() => { window.scrollTo(0, 0); }, [step, premiumStep]);
   
   // [UX Enhancement] Scroll Lock
   useEffect(() => {
-      if (premiumStep !== PremiumStep.IDLE || showInfoModal) {
+      if (premiumStep !== PremiumStep.IDLE || showInfoModal || isRestoring || isRestoreFailed) {
           document.body.style.overflow = 'hidden';
       } else {
           document.body.style.overflow = 'unset';
       }
       return () => { document.body.style.overflow = 'unset'; };
-  }, [premiumStep, showInfoModal]);
+  }, [premiumStep, showInfoModal, isRestoring, isRestoreFailed]);
 
   useEffect(() => {
     // Trigger animation for both Main Analysis AND Premium Analysis
@@ -135,6 +276,8 @@ const App: React.FC = () => {
       alert("이름과 질문을 입력해주세요.");
       return;
     }
+    // [FIX 1] Reset Analysis Flag on Start
+    analysisStartedRef.current = false;
     setStep(Step.DIVINATION);
   };
 
@@ -154,28 +297,49 @@ const App: React.FC = () => {
     setLines(prev => [...prev, sum as LineValue]);
   };
 
+  // [FIX 1-1] Decouple State Change from Analysis Execution
   useEffect(() => {
-    if (lines.length === 6 && !isTossing) {
+    // Check if 6 lines are complete and not currently tossing
+    if (lines.length === 6 && !isTossing && step === Step.DIVINATION) {
+        // Wait briefly for the last coin animation to settle visually
         setTimeout(() => {
             setStep(Step.ANALYZING);
-            performAnalysis();
         }, 1500);
     }
-  }, [lines, isTossing]);
+  }, [lines, isTossing, step]);
+
+  // [FIX 1-2] Trigger Analysis ONLY when step is ANALYZING
+  useEffect(() => {
+      if (step === Step.ANALYZING && !analysisStartedRef.current) {
+          analysisStartedRef.current = true;
+          // Use a small timeout to allow the browser to paint the loading screen first
+          setTimeout(() => {
+              performAnalysis();
+          }, 100);
+      }
+  }, [step]);
 
   const performAnalysis = async () => {
+    // [UX] Restore wait time to 8 seconds
     const minDelay = new Promise(resolve => setTimeout(resolve, 8000));
+    
+    // Call API without timeout protection (Restored behavior)
     const apiCall = interpretHexagram(userContext, lines);
+    
     try {
         const [_, result] = await Promise.all([minDelay, apiCall]);
+        
         setProgress(100); 
         setTimeout(() => {
             setAnalysis(result);
             setStep(Step.RESULT);
-        }, 1000); 
+        }, 1000); // Standard transition delay
     } catch (e) {
-        alert("분석 중 오류가 발생했습니다.");
+        console.error("Critical Analysis Error", e);
+        alert("분석 중 오류가 발생했습니다. 다시 시도해주세요.");
         setStep(Step.LANDING);
+        analysisStartedRef.current = false;
+        setLines([]);
     }
   };
 
@@ -278,27 +442,50 @@ const App: React.FC = () => {
       setPremiumStep(PremiumStep.INPUT);
   };
 
-  const handlePaymentAndAnalyze = async () => {
+  // [FIX 2] Helper to save state before redirect
+  const saveStateForPayment = (isProgramMode: boolean) => {
+      sessionStorage.setItem('oppajeom_payment_pending', 'true');
+      sessionStorage.setItem('oppajeom_context', JSON.stringify(userContext));
+      sessionStorage.setItem('oppajeom_lines', JSON.stringify(lines));
+      if (analysis) sessionStorage.setItem('oppajeom_analysis', JSON.stringify(analysis));
+      sessionStorage.setItem('oppajeom_premium_q', JSON.stringify(premiumQuestions));
+      sessionStorage.setItem('oppajeom_is_program_mode', isProgramMode ? 'true' : 'false');
+  };
+
+  const handlePaymentAndAnalyze = async (pgProvider: string) => {
       if (!premiumQuestions.q1 || !premiumQuestions.q2 || !analysis) return;
 
       if (!window.IMP) {
-          alert("결제 모듈 로딩 실패");
+          alert("결제 모듈이 로드되지 않았습니다. 새로고침 후 다시 시도해주세요.");
           return;
       }
       
-      // Portone Payment Logic
+      // Force Initialize V1 with user code right before payment
+      window.IMP.init("imp16601765"); 
+      
+      // Save state before redirect
+      saveStateForPayment(false);
+
+      // Check Mobile for popup config
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+      // [FIX 3] Mobile Optimized Payment (Redirect)
+      // [SIMPLIFIED] Always use 'kakaopay' now
       window.IMP.request_pay({
-          pg: "kakaopay.TC0ONETIME", // Test PG
-          pay_method: "card",
+          pg: pgProvider, // 'kakaopay' or 'tosspayments'
+          pay_method: "card", // Default
           merchant_uid: `coffee_${new Date().getTime()}`,
           name: "현자에게 커피 한 잔 (심층 질문권)",
           amount: 4900, 
-          buyer_email: "",
+          buyer_email: "from.mr.ouyaa@gmail.com",
           buyer_name: userContext.name,
           buyer_tel: "01000000000",
+          m_redirect_url: `${window.location.origin}${window.location.pathname}`, // Explicit URL
+          app_scheme: 'oppajeompayment', // Required for App switching
+          popup: !isMobile // PC: Popup (True), Mobile: Redirect (False)
       }, async (rsp: any) => {
+          // This callback runs on PC (popup mode)
           if (rsp.success) {
-              // Payment Success -> Trigger AI Analysis
               setPremiumStep(PremiumStep.ANALYZING);
               try {
                   const result = await interpretPremiumQuestions(userContext, analysis, premiumQuestions, lines);
@@ -310,7 +497,11 @@ const App: React.FC = () => {
                   setPremiumStep(PremiumStep.INPUT);
               }
           } else {
-              alert(`결제 실패: ${rsp.error_msg}`);
+              console.warn("Payment failed or cancelled:", rsp);
+              if (rsp.error_msg && !rsp.error_msg.includes('취소')) {
+                  alert(`결제 실패: ${rsp.error_msg}`);
+              }
+              setPremiumStep(PremiumStep.INPUT);
           }
       });
   };
@@ -378,10 +569,39 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className="min-h-screen text-gray-100 flex flex-col items-center font-sans relative overflow-x-hidden"
+      className="min-h-screen text-gray-100 flex flex-col items-center font-sans relative"
       style={appBackgroundStyle}
       ref={topRef}
     >
+      {/* RESTORE LOADING OVERLAY */}
+      {isRestoring && (
+          <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in-slow">
+              <span className="material-symbols-outlined text-5xl text-[#eebd2b] animate-spin mb-6">sync</span>
+              <p className="text-white text-lg font-bold mb-2">결제 정보를 확인하고 있습니다...</p>
+              <p className="text-gray-400 text-sm">잠시만 기다려주세요.</p>
+          </div>
+      )}
+
+      {/* RESTORE FAILED OVERLAY (Manual Retry) */}
+      {isRestoreFailed && (
+          <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md animate-fade-in-slow px-6 text-center">
+              <span className="material-symbols-outlined text-5xl text-red-500 mb-6">error</span>
+              <h2 className="text-white text-xl font-bold mb-2">설정이 완전히 마무리되지 않았습니다.</h2>
+              <p className="text-gray-400 text-sm mb-8 leading-relaxed">
+                  결제는 정상적으로 완료되었으나,<br/>
+                  네트워크 문제로 구독 설정이 저장되지 않았습니다.<br/>
+                  아래 버튼을 눌러 설정을 완료해주세요.
+              </p>
+              <button 
+                  onClick={handleManualRetry}
+                  className="bg-[#eebd2b] text-black font-bold py-4 px-8 rounded-xl shadow-lg hover:bg-[#d4a825] transition-all flex items-center gap-2"
+              >
+                  <span className="material-symbols-outlined">refresh</span>
+                  설정 완료하기 (재시도)
+              </button>
+          </div>
+      )}
+
       {/* Monthly Care Modal */}
       {isProgramMode && (
         <ProgramMode 
@@ -436,16 +656,17 @@ const App: React.FC = () => {
                           </p>
                       </div>
 
-                      {/* 3. Business Info (Placeholders) */}
+                      {/* 3. Business Info */}
                       <div>
                           <h4 className="font-bold text-white mb-2 text-xs uppercase tracking-wider text-[#eebd2b]/80">사업자 정보</h4>
                           <div className="grid grid-cols-[70px_1fr] gap-y-1 text-xs text-gray-400">
-                              <span>상호명</span> <span>[애월에서]</span>
-                              <span>대표자</span> <span>[조희제]</span>
-                              <span>사업자번호</span> <span>[341-23-01423]</span>
-                              <span>주소</span> <span>[제주특별자치도 제주시 애월읍 광상로 305]</span>
-                              <span>전화번호</span> <span>[010-4745-2249]</span>
-                              <span>이메일</span> <span>[from.mr.ouyaa@gmail.com]</span>
+                              <span>상호명</span> <span>애월에서</span>
+                              <span>대표자</span> <span>조희제</span>
+                              <span>사업자번호</span> <span>341-23-01423</span>
+                              <span>주소</span> <span>제주특별자치도 제주시 애월읍 광상로 305</span>
+                              <span>전화번호</span> <span>010-4745-2249</span>
+                              <span>이메일</span> <span>from.mr.ouyaa@gmail.com</span>
+                              <span>통신판매업</span> <span>신고 준비 중</span>
                           </div>
                       </div>
                   </div>
@@ -499,14 +720,40 @@ const App: React.FC = () => {
                           </div>
                       </div>
 
-                      <button 
-                          onClick={handlePaymentAndAnalyze}
-                          disabled={!premiumQuestions.q1 || !premiumQuestions.q2}
-                          className="w-full bg-[#eebd2b] text-black font-bold py-4 rounded-xl shadow-lg hover:bg-[#d4a825] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                          <span className="material-symbols-outlined text-lg">payments</span>
-                          <span>결제하기</span>
-                      </button>
+                      {/* Payment Buttons - SIMPLIFIED */}
+                      <div className="space-y-3 mb-6">
+                          {/* Kakao Pay (Primary) */}
+                          <button 
+                              onClick={() => handlePaymentAndAnalyze('kakaopay')}
+                              disabled={!premiumQuestions.q1 || !premiumQuestions.q2}
+                              className="w-full py-4 rounded-xl bg-[#FAE100] hover:bg-[#eac900] text-[#371D1E] flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                          >
+                              <span className="material-symbols-outlined text-[#371D1E]">chat_bubble</span>
+                              <span className="font-bold">카카오페이로 결제하기</span>
+                          </button>
+
+                          {/* Toss Pay (Secondary) */}
+                          <button 
+                              onClick={() => handlePaymentAndAnalyze('tosspayments')}
+                              disabled={!premiumQuestions.q1 || !premiumQuestions.q2}
+                              className="w-full py-4 rounded-xl bg-[#3282F6] hover:bg-[#2b72d7] text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                          >
+                              <span className="font-bold">토스페이/카드로 결제하기</span>
+                          </button>
+                          
+                          <p className="text-[10px] text-gray-500 text-center">
+                              * 카카오페이에 등록된 <span className="text-gray-400 font-bold">신용/체크카드</span>도 사용 가능합니다.
+                          </p>
+                      </div>
+
+                      <div className="mt-4 flex justify-center">
+                          <button 
+                              onClick={handleTestPremiumAnalyze}
+                              className="text-xs text-gray-500 underline hover:text-[#eebd2b] transition-colors"
+                          >
+                              [테스트] 결제 없이 분석 결과 보기
+                          </button>
+                      </div>
                   </div>
               )}
 
@@ -550,11 +797,16 @@ const App: React.FC = () => {
                           {renderFormattedAdvice(premiumAdvice)}
                       </div>
                       
+                      {/* Warning Message */}
+                      <p className="text-center text-white text-xs font-bold mt-8 mb-2 animate-pulse leading-relaxed">
+                          ⚠️ 이 페이지를 나가면 조언 내용이 사라집니다.<br/>PDF로 저장하세요.
+                      </p>
+
                       {/* PDF Download Button */}
                       <button 
                           onClick={handleDownloadPremiumPDF}
                           disabled={isPdfGenerating}
-                          className={`w-full mt-8 mb-3 bg-[#eebd2b] text-black font-bold py-4 rounded-xl hover:bg-[#d4a825] transition-colors flex items-center justify-center gap-2 ${isPdfGenerating ? 'opacity-70 cursor-not-allowed' : ''}`}
+                          className={`w-full mb-3 bg-[#eebd2b] text-black font-bold py-4 rounded-xl hover:bg-[#d4a825] transition-colors flex items-center justify-center gap-2 ${isPdfGenerating ? 'opacity-70 cursor-not-allowed' : ''}`}
                       >
                           {isPdfGenerating ? (
                               <>
@@ -753,32 +1005,32 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* STEP 4: ANALYZING */}
+      {/* STEP 4: ANALYZING (RESTORED) */}
       {step === Step.ANALYZING && (
-        <div className="flex flex-col items-center justify-center min-h-screen w-full px-6 text-center relative z-10 animate-fade-in-slow">
-             <div className="w-full max-w-xs relative z-10">
-                 <h2 className="text-[17px] font-serif font-medium text-white mb-10 leading-loose tracking-wide tracking-tighter drop-shadow-lg">
-                   괘상을 읽고<br/>하늘의 뜻을 해석 중입니다...
-                 </h2>
-                 <div className="mb-12">
-                     <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mb-3">
-                         <div className="h-full bg-[#eebd2b] transition-all duration-300 ease-out shadow-[0_0_15px_#eebd2b]" style={{width: `${progress}%`}}></div>
-                     </div>
-                     <div className="flex justify-between text-[10px] font-bold tracking-widest text-[#eebd2b] font-sans drop-shadow-md">
-                       <span>ANALYZING...</span>
-                       <span>{Math.round(progress)}%</span>
-                     </div>
-                 </div>
-                 <div className="h-24 relative flex items-center justify-center">
-                     {loadingMessages.map((msg, idx) => (
-                         <div key={idx} className={`absolute top-0 left-0 w-full transition-all duration-1000 flex flex-col items-center justify-center gap-1.5 ${idx === loadingMsgIndex ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
-                            <p className="text-[#eebd2b] text-[15px] font-bold leading-relaxed break-keep drop-shadow-md">{msg.l1}</p>
-                            <p className="text-[#eebd2b] text-[15px] font-bold leading-relaxed break-keep drop-shadow-md">{msg.l2}</p>
-                         </div>
-                     ))}
-                 </div>
-             </div>
-        </div>
+          <div className="flex flex-col items-center justify-center min-h-screen w-full px-6 text-center relative z-10 animate-fade-in-slow">
+               <div className="w-full max-w-xs relative z-10">
+                   <h2 className="text-[17px] font-serif font-medium text-white mb-10 leading-loose tracking-wide tracking-tighter drop-shadow-lg">
+                     하늘의 뜻을<br/>읽어내고 있습니다...
+                   </h2>
+                   <div className="mb-12">
+                       <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mb-3">
+                           <div className="h-full bg-[#eebd2b] transition-all duration-300 ease-out shadow-[0_0_15px_#eebd2b]" style={{width: `${progress}%`}}></div>
+                       </div>
+                       <div className="flex justify-between text-[10px] font-bold tracking-widest text-[#eebd2b] font-sans drop-shadow-md">
+                         <span>ANALYZING...</span>
+                         <span>{Math.round(progress)}%</span>
+                       </div>
+                   </div>
+                   <div className="h-24 relative flex items-center justify-center">
+                       {loadingMessages.map((msg, idx) => (
+                           <div key={idx} className={`absolute top-0 left-0 w-full transition-all duration-1000 flex flex-col items-center justify-center gap-1.5 ${idx === loadingMsgIndex ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+                              <p className="text-[#eebd2b] text-[15px] font-bold leading-relaxed break-keep drop-shadow-md">{msg.l1}</p>
+                              <p className="text-[#eebd2b] text-[15px] font-bold leading-relaxed break-keep drop-shadow-md">{msg.l2}</p>
+                           </div>
+                       ))}
+                   </div>
+               </div>
+          </div>
       )}
 
       {/* STEP 5: RESULT */}
@@ -900,7 +1152,7 @@ const App: React.FC = () => {
                                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#eebd2b]/10 flex items-center justify-center text-[#eebd2b] font-bold text-xs mt-0.5">
                                         {idx + 1}
                                     </div>
-                                    <p className="text-gray-300 text-sm leading-relaxed font-light">{item}</p>
+                                    <p className="text-gray-300 text-[15px] leading-relaxed font-light">{item}</p>
                                 </div>
                             ))}
                         </div>

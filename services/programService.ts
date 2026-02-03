@@ -3,6 +3,10 @@ import { UserContext, LineValue, Subscription, WeeklyContent, WeeklyLog } from "
 import { supabase } from "./supabaseClient";
 import { HEXAGRAM_TABLE } from "./hexagramData";
 
+// Constants for LocalStorage Keys
+const LOCAL_SUBS_KEY = 'oppajeom_local_subscriptions';
+const LOCAL_LOGS_KEY = 'oppajeom_local_logs';
+
 const getApiKey = (): string | undefined => {
     try {
         return process.env.API_KEY;
@@ -159,44 +163,61 @@ export const generateWeeklyContent = async (
     위 정보를 바탕으로, 사용자에게 필요한 화두와 해석, 실천법을 인생의 벗(Wise Companion) 입장에서 생성하십시오.
     `;
 
-    try {
-        const response = await genAI.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-                systemInstruction: SYSTEM_INSTRUCTION,
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        koan: { type: Type.STRING },
-                        deep_insight: { type: Type.STRING },
-                        weekly_ritual: { type: Type.STRING }
-                    },
-                    required: ["koan", "deep_insight", "weekly_ritual"]
-                }
-            }
-        });
+    // [RETRY LOGIC] Network glitch protection
+    const MAX_RETRIES = 3;
+    let attempt = 0;
 
-        if (response.text) {
-            const result = JSON.parse(response.text);
-            return { 
-                week,
-                koan: result.koan,
-                reflection: result.deep_insight, 
-                action_item: result.weekly_ritual
-            };
+    while (attempt < MAX_RETRIES) {
+        try {
+            const response = await genAI.models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    systemInstruction: SYSTEM_INSTRUCTION,
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            koan: { type: Type.STRING },
+                            deep_insight: { type: Type.STRING },
+                            weekly_ritual: { type: Type.STRING }
+                        },
+                        required: ["koan", "deep_insight", "weekly_ritual"]
+                    }
+                }
+            });
+
+            if (response.text) {
+                const result = JSON.parse(response.text);
+                return { 
+                    week,
+                    koan: result.koan,
+                    reflection: result.deep_insight, 
+                    action_item: result.weekly_ritual
+                };
+            }
+            throw new Error("No response text from AI");
+
+        } catch (e) {
+            console.warn(`Content Gen Attempt ${attempt + 1} Failed:`, e);
+            attempt++;
+            if (attempt >= MAX_RETRIES) {
+                console.error("All retries failed. Returning fallback content.");
+                return {
+                    week,
+                    koan: "그대의 발이 멈췄을 때, 마음은 어디로 달리고 있는가?",
+                    // [FIX] Use actual newlines (\n) instead of escaped string literals (\\n) for raw text fallback
+                    reflection: "연결이 끊어졌습니다.\n\n이 단절 또한 하나의 신호입니다. 외부의 소음을 끄고 침묵 속으로 들어가세요.",
+                    action_item: "[단절의 시간]\n\n1분간 전자기기를 끄고 눈을 감으세요."
+                };
+            }
+            // Simple backoff
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
         }
-        throw new Error("No response from AI");
-    } catch (e) {
-        console.error("Content Gen Error", e);
-        return {
-            week,
-            koan: "그대의 발이 멈췄을 때, 마음은 어디로 달리고 있는가?",
-            reflection: "연결이 끊어졌습니다.\\n\\n이 단절 또한 하나의 신호입니다. 외부의 소음을 끄고 침묵 속으로 들어가세요.",
-            action_item: "[단절의 시간]\\n\\n1분간 전자기기를 끄고 눈을 감으세요."
-        };
     }
+    
+    // Should not reach here due to return in loop
+    throw new Error("Unexpected end of generation");
 };
 
 // --- SHORT LINE DESCRIPTION (FOR WEEK 2+ VIEW) ---
@@ -483,7 +504,18 @@ export const generateKoanCardImage = async (
     }
 };
 
-// --- DB OPERATIONS ---
+// --- DB OPERATIONS (WITH LOCAL STORAGE FALLBACK) ---
+
+// UUID 생성 헬퍼 (구형 브라우저 지원용)
+function generateUUID() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
 
 export const createSubscription = async (
     user: UserContext,
@@ -495,39 +527,78 @@ export const createSubscription = async (
         .map((l, i) => (l === 6 || l === 9 ? i : -1))
         .filter(i => i !== -1);
 
-    const { data, error } = await supabase
-        .from('subscriptions')
-        .insert({
-            user_name: user.name,
-            phone: phone,
-            hexagram_code: hexagramCode,
-            moving_lines: movingLines, // Stored as JSON array
-            question: user.question,
-            situation: user.situation,
-            current_week: 1,
-            status: 'active'
-        })
-        .select()
-        .single();
+    const newSub: Subscription = {
+        id: generateUUID(),
+        user_name: user.name,
+        phone: phone,
+        hexagram_code: hexagramCode,
+        moving_lines: movingLines,
+        situation: user.situation,
+        current_week: 1,
+        started_at: new Date().toISOString(),
+        status: 'active'
+    };
 
-    if (error) {
-        console.error("Subscription Error:", error);
-        return null;
+    // 1. Try Supabase Insert
+    try {
+        const { data, error } = await supabase
+            .from('subscriptions')
+            .insert({
+                ...newSub,
+                moving_lines: movingLines // Pass array directly, supabase js handles jsonb
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    } catch (e) {
+        console.warn("Supabase insert failed, falling back to LocalStorage:", e);
+        
+        // 2. Fallback to LocalStorage
+        try {
+            const localSubs = JSON.parse(localStorage.getItem(LOCAL_SUBS_KEY) || '[]');
+            // 중복 방지 (같은 전화번호가 있으면 덮어쓰기 대신 추가 - 히스토리 관리)
+            localSubs.push(newSub);
+            localStorage.setItem(LOCAL_SUBS_KEY, JSON.stringify(localSubs));
+            return newSub;
+        } catch (localErr) {
+            console.error("LocalStorage write failed:", localErr);
+            return null;
+        }
     }
-    return data;
 };
 
 export const getSubscriptionByPhone = async (phone: string): Promise<Subscription | null> => {
-    const { data, error } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('phone', phone)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .single();
-    
-    if (error) return null;
-    return data;
+    // 1. Try Supabase Select
+    try {
+        const { data, error } = await supabase
+            .from('subscriptions')
+            .select('*')
+            .eq('phone', phone)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .single();
+        
+        if (data) return data;
+        // PGRST116 is "The result contains 0 rows"
+        if (error && error.code !== 'PGRST116') throw error; 
+    } catch (e) {
+        console.warn("Supabase select failed or empty, checking LocalStorage:", e);
+    }
+
+    // 2. Fallback to LocalStorage
+    try {
+        const localSubs = JSON.parse(localStorage.getItem(LOCAL_SUBS_KEY) || '[]');
+        // Find most recent matching phone
+        const found = localSubs
+            .filter((sub: any) => sub.phone === phone)
+            .sort((a: any, b: any) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())[0];
+        
+        return found || null;
+    } catch (e) {
+        return null;
+    }
 };
 
 export const saveWeeklyLog = async (
@@ -536,40 +607,84 @@ export const saveWeeklyLog = async (
     emotion: string,
     content: WeeklyContent
 ): Promise<void> => {
-    await supabase.from('weekly_logs').insert({
+    const logData = {
         subscription_id: subscriptionId,
         week_number: week,
         user_emotion: emotion,
-        ai_content: content
-    });
+        ai_content: content,
+        created_at: new Date().toISOString()
+    };
+
+    // 1. Try Supabase Insert
+    try {
+        const { error } = await supabase.from('weekly_logs').insert(logData);
+        if (error) throw error;
+    } catch (e) {
+        console.warn("Supabase log insert failed, falling back to LocalStorage");
+        // 2. Fallback
+        const localLogs = JSON.parse(localStorage.getItem(LOCAL_LOGS_KEY) || '[]');
+        localLogs.push(logData);
+        localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(localLogs));
+    }
 };
 
 export const getPreviousLog = async (subscriptionId: string, week: number): Promise<WeeklyLog | null> => {
-    // 현재 주차보다 1주 전의 로그를 가져옵니다.
     if (week <= 1) return null;
-    
-    const { data, error } = await supabase
-        .from('weekly_logs')
-        .select('*')
-        .eq('subscription_id', subscriptionId)
-        .eq('week_number', week - 1)
-        .single();
-        
-    if (error) return null;
-    return data as WeeklyLog;
+    const targetWeek = week - 1;
+
+    // 1. Try Supabase
+    try {
+        const { data, error } = await supabase
+            .from('weekly_logs')
+            .select('*')
+            .eq('subscription_id', subscriptionId)
+            .eq('week_number', targetWeek)
+            .single();
+            
+        if (data) return data as WeeklyLog;
+        if (error && error.code !== 'PGRST116') throw error;
+    } catch (e) {
+        console.warn("Supabase log fetch failed, checking LocalStorage");
+    }
+
+    // 2. LocalStorage Fallback
+    try {
+        const localLogs = JSON.parse(localStorage.getItem(LOCAL_LOGS_KEY) || '[]');
+        const found = localLogs.find((log: any) => 
+            log.subscription_id === subscriptionId && log.week_number === targetWeek
+        );
+        return found || null;
+    } catch (e) {
+        return null;
+    }
 };
 
 export const getLogByWeek = async (subscriptionId: string, week: number): Promise<WeeklyLog | null> => {
-    // 특정 주차의 로그를 정확히 가져옵니다.
-    const { data, error } = await supabase
-        .from('weekly_logs')
-        .select('*')
-        .eq('subscription_id', subscriptionId)
-        .eq('week_number', week)
-        .single();
+    // 1. Try Supabase
+    try {
+        const { data, error } = await supabase
+            .from('weekly_logs')
+            .select('*')
+            .eq('subscription_id', subscriptionId)
+            .eq('week_number', week)
+            .single();
 
-    if (error) return null;
-    return data as WeeklyLog;
+        if (data) return data as WeeklyLog;
+        if (error && error.code !== 'PGRST116') throw error;
+    } catch (e) {
+        console.warn("Supabase log fetch failed, checking LocalStorage");
+    }
+
+    // 2. LocalStorage Fallback
+    try {
+        const localLogs = JSON.parse(localStorage.getItem(LOCAL_LOGS_KEY) || '[]');
+        const found = localLogs.find((log: any) => 
+            log.subscription_id === subscriptionId && log.week_number === week
+        );
+        return found || null;
+    } catch (e) {
+        return null;
+    }
 };
 
 // --- NOTIFICATION TRIGGER (CLIENT SIDE) ---
@@ -580,6 +695,7 @@ export const triggerAlimTalk = async (phone: string, name: string, week: number)
             body: { phone, name, week }
         });
     } catch (e) {
-        console.error("AlimTalk Trigger Failed:", e);
+        // 알림톡 발송 실패는 치명적이지 않으므로 로그만 남깁니다.
+        console.error("AlimTalk Trigger Failed (Network/Supabase Error):", e);
     }
 };

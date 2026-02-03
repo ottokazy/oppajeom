@@ -74,7 +74,7 @@ export interface WeeklyLog {
     subscription_id: string;
     week_number: number;
     user_emotion: string; // 사용자의 피드백/감정 일기
-    content: WeeklyContent; // AI가 생성한 내용
+    ai_content: WeeklyContent; // AI가 생성한 내용
     created_at?: string;
 }
 
