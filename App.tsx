@@ -13,7 +13,7 @@ import { jsPDF } from 'jspdf';
 // 2. 우측 상단의 'Raw' 버튼을 우클릭하거나 클릭하여 '이미지 주소 복사'를 하세요.
 //    (주소가 https://raw.githubusercontent.com/... 으로 시작해야 외부에서 보입니다.)
 // 3. 아래 따옴표("") 안에 복사한 주소를 붙여넣으세요.
-const GITHUB_IMG_URL = ""; 
+const GITHUB_IMG_URL = "https://raw.githubusercontent.com/ottokazy/oppajeom/main/yin_yang_cat.png"; 
 
 // 기본 태극 문양 (이미지가 없을 경우 사용됨)
 const DEFAULT_SVG_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23eebd2b;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23b58900;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='%231a1a1a' stroke='%23eebd2b' stroke-width='1.5'/%3E%3Cpath d='M50,2 A48,48 0 0,1 50,98 A24,24 0 0,1 50,50 A24,24 0 0,0 50,2' fill='url(%23grad)'/%3E%3Ccircle cx='50' cy='26' r='5' fill='%231a1a1a'/%3E%3Ccircle cx='50' cy='74' r='5' fill='%23eebd2b'/%3E%3C/svg%3E";
