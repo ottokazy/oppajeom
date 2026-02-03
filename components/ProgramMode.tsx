@@ -215,12 +215,17 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
         sessionStorage.setItem('oppajeom_is_program_mode', 'true');
         sessionStorage.setItem('oppajeom_phone', phone);
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const redirectUrl = window.location.origin + window.location.pathname;
+        
+        // [CRITICAL FIX] m_redirect_url Construction
+        // 1. 현재 주소 가져오기 (쿼리 스트링 제외)
+        const currentUrl = window.location.href.split('?')[0];
+
         window.IMP.request_pay({
             pg: targetPg, pay_method: "card", merchant_uid: `sub_${new Date().getTime()}`,
             name: "월간 화두: 4주 마음 챙김 구독", amount: 9900,
             buyer_email: "from.mr.ouyaa@gmail.com", buyer_name: userContext.name, buyer_tel: phone,
-            m_redirect_url: redirectUrl, app_scheme: 'oppajeompayment', popup: !isMobile
+            m_redirect_url: currentUrl, 
+            app_scheme: 'oppajeompayment', popup: !isMobile
         }, async (rsp: any) => {
             if (rsp.success) {
                 const newSub = await createSubscription(userContext, lines, phone);
@@ -408,7 +413,7 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
                                         <span className="material-symbols-outlined text-gold text-sm">style</span>
                                     </div>
                                      <p className="text-base text-midnight-text font-bold leading-relaxed break-keep pt-0.5 text-left">
-                                        흔들릴 때 꺼내보는, 나만의 질문 카드
+                                        흔들릴 때 꺼내보는, 나만의 화두 카드
                                     </p>
                                 </div>
 
@@ -462,13 +467,18 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
                         <p className="text-midnight-sub text-sm font-light">매주 월요일 아침,<br/>당신의 전화번호로 지혜가 도착합니다.</p>
                     </div>
                     <div className="space-y-6">
-                        <div className="relative"><input type="tel" placeholder="01012345678" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-midnight border border-white/10 rounded-xl p-4 text-lg text-midnight-text focus:border-gold focus:ring-1 focus:ring-gold placeholder-[#555] outline-none text-center tracking-widest transition-all" /></div>
+                        <div className="relative">
+                            <input type="tel" placeholder="01012345678" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-midnight border border-white/10 rounded-xl p-4 text-lg text-midnight-text focus:border-gold focus:ring-1 focus:ring-gold placeholder-[#555] outline-none text-center tracking-widest transition-all" />
+                            <p className="text-[10px] text-midnight-sub/50 mt-2 text-center break-keep leading-tight">
+                                입력하신 전화번호는 4주간의 알림 발송을 위해서만 사용되며, 서비스 종료 후 즉시 파기됩니다.
+                            </p>
+                        </div>
                         <div className="space-y-3 pt-2">
                             <button onClick={() => handleLoginAndPay('kakaopay')} disabled={isGenerating} className="w-full py-4 rounded-xl bg-[#FAE100] hover:bg-[#eac900] text-[#371D1E] flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md">
-                                {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <><span className="material-symbols-outlined">chat_bubble</span><span className="font-bold">카카오페이로 결제하기 (9,900원)</span></>}
+                                {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="font-bold">카카오페이 결제</span>}
                             </button>
                             <button onClick={() => handleLoginAndPay('tosspayments')} disabled={isGenerating} className="w-full py-4 rounded-xl bg-[#3282F6] hover:bg-[#2b72d7] text-white flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md">
-                                {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="font-bold">토스페이/카드로 결제하기</span>}
+                                {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="font-bold">토스페이/카드 결제</span>}
                             </button>
                             <p className="text-[10px] text-gray-500 text-center">* 카카오페이에 등록된 <span className="text-gray-400 font-bold">신용/체크카드</span>도 사용 가능합니다.</p>
                         </div>
@@ -539,7 +549,8 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
                 <header className="px-6 py-6 flex justify-end items-center sticky top-0 bg-midnight/90 backdrop-blur-md z-20 border-b border-white/5">
                      <button onClick={onClose} className="text-gold/80 hover:text-gold font-bold text-xs tracking-widest uppercase transition-colors">Close</button>
                 </header>
-                <main className="px-6 pb-24 max-w-md mx-auto pt-8 relative z-10">
+                {/* [FIX] PC cutoff: Increased bottom padding from pb-24 to pb-32 */}
+                <main className="px-6 pb-32 max-w-md mx-auto pt-8 relative z-10">
                     <div className="flex justify-center mb-12 transform scale-100 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
                         <KoanCard week={weeklyContent.week} koan={weeklyContent.koan} userName={subscription?.user_name || 'User'} hexagramCode={hexCode} hexagramName={hexHanja} cardRef={null} />
                     </div>

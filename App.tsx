@@ -469,6 +469,10 @@ const App: React.FC = () => {
       // Check Mobile for popup config
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+      // [CRITICAL FIX] m_redirect_url Construction
+      // 1. 현재 주소 가져오기 (쿼리 스트링 제외)
+      const currentUrl = window.location.href.split('?')[0];
+      
       // [FIX 3] Mobile Optimized Payment (Redirect)
       // [SIMPLIFIED] Always use 'kakaopay' now
       window.IMP.request_pay({
@@ -480,7 +484,7 @@ const App: React.FC = () => {
           buyer_email: "from.mr.ouyaa@gmail.com",
           buyer_name: userContext.name,
           buyer_tel: "01000000000",
-          m_redirect_url: `${window.location.origin}${window.location.pathname}`, // Explicit URL
+          m_redirect_url: currentUrl, // Explicit URL
           app_scheme: 'oppajeompayment', // Required for App switching
           popup: !isMobile // PC: Popup (True), Mobile: Redirect (False)
       }, async (rsp: any) => {
@@ -634,7 +638,7 @@ const App: React.FC = () => {
                                   <span className="text-white font-bold">무료</span>
                               </li>
                               <li className="flex justify-between">
-                                  <span>심층 분석 </span>
+                                  <span>심층 분석 (커피 후원)</span>
                                   <span className="text-white font-bold">4,900원</span>
                               </li>
                               <li className="flex justify-between">
@@ -728,8 +732,7 @@ const App: React.FC = () => {
                               disabled={!premiumQuestions.q1 || !premiumQuestions.q2}
                               className="w-full py-4 rounded-xl bg-[#FAE100] hover:bg-[#eac900] text-[#371D1E] flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                           >
-                              <span className="material-symbols-outlined text-[#371D1E]">chat_bubble</span>
-                              <span className="font-bold">카카오페이로 결제하기</span>
+                              <span className="font-bold">카카오페이 결제</span>
                           </button>
 
                           {/* Toss Pay (Secondary) */}
@@ -738,7 +741,7 @@ const App: React.FC = () => {
                               disabled={!premiumQuestions.q1 || !premiumQuestions.q2}
                               className="w-full py-4 rounded-xl bg-[#3282F6] hover:bg-[#2b72d7] text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                           >
-                              <span className="font-bold">토스페이/카드로 결제하기</span>
+                              <span className="font-bold">토스페이/카드 결제</span>
                           </button>
                           
                           <p className="text-[10px] text-gray-500 text-center">
