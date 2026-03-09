@@ -86,7 +86,8 @@ export const KoanCard: React.FC<KoanCardProps> = ({ week, koan, userName, hexagr
 
 
             {/* 5. Content Layer */}
-            <div className="relative z-20 h-full flex flex-col justify-between p-10 text-[#EAEAEA]">
+            {/* [MODIFIED] Reduced Padding p-10 -> p-7 to allow more space for text */}
+            <div className="relative z-20 h-full flex flex-col justify-between p-7 text-[#EAEAEA]">
                 
                 {/* Header */}
                 <div className="flex justify-between items-start">
@@ -102,10 +103,12 @@ export const KoanCard: React.FC<KoanCardProps> = ({ week, koan, userName, hexagr
                 {/* Main Koan */}
                 <div className="flex-1 flex flex-col items-center justify-center relative my-4">
                     {/* Vertical Divider Top */}
-                    <div className="w-[1px] h-16 bg-gradient-to-b from-transparent via-[#D4AF37] to-transparent opacity-40 mb-8"></div>
+                    {/* [MODIFIED] Reduced Divider Height h-16 -> h-10 */}
+                    <div className="w-[1px] h-10 bg-gradient-to-b from-transparent via-[#D4AF37] to-transparent opacity-40 mb-6"></div>
                     
                     <h1 
-                        className="text-[28px] font-bold leading-[1.6] text-center break-keep text-[#EAEAEA] tracking-tight"
+                        /* [MODIFIED] Reduced Font Size text-[28px] -> text-[22px] */
+                        className="text-[22px] font-bold leading-[1.6] text-center break-keep text-[#EAEAEA] tracking-tight"
                         style={{ 
                             wordBreak: 'keep-all', 
                             textShadow: '0 4px 10px rgba(0,0,0,0.8)' 
@@ -115,7 +118,8 @@ export const KoanCard: React.FC<KoanCardProps> = ({ week, koan, userName, hexagr
                     </h1>
 
                     {/* Vertical Divider Bottom */}
-                    <div className="w-[1px] h-16 bg-gradient-to-b from-transparent via-[#D4AF37] to-transparent opacity-40 mt-8"></div>
+                    {/* [MODIFIED] Reduced Divider Height h-16 -> h-10 */}
+                    <div className="w-[1px] h-10 bg-gradient-to-b from-transparent via-[#D4AF37] to-transparent opacity-40 mt-6"></div>
                 </div>
 
                 {/* Footer */}

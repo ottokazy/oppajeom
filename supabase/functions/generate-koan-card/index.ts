@@ -112,6 +112,7 @@ serve(async (req) => {
             }),
 
             // Content Container
+            // [MODIFIED] Reduced Padding 32px -> 28px
             React.createElement("div", {
                 style: {
                     position: "relative",
@@ -119,7 +120,7 @@ serve(async (req) => {
                     flexDirection: "column",
                     justifyContent: "space-between",
                     height: "100%",
-                    padding: "32px",
+                    padding: "28px",
                     color: "white"
                 }
             }, [
@@ -143,11 +144,13 @@ serve(async (req) => {
                 React.createElement("div", {
                     style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, width: "100%" }
                 }, [
-                    React.createElement("div", { style: { width: "1px", height: "48px", background: "linear-gradient(to bottom, transparent, #eebd2b, transparent)", opacity: 0.5, marginBottom: "24px" }}),
+                    // [MODIFIED] Reduced Divider Height 48px -> 40px
+                    React.createElement("div", { style: { width: "1px", height: "40px", background: "linear-gradient(to bottom, transparent, #eebd2b, transparent)", opacity: 0.5, marginBottom: "24px" }}),
                     
                     React.createElement("h1", {
                         style: { 
-                            fontSize: "28px", 
+                            // [MODIFIED] Reduced Font Size 28px -> 22px
+                            fontSize: "22px", 
                             fontWeight: 700, 
                             textAlign: "center", 
                             color: "white", 
@@ -157,7 +160,8 @@ serve(async (req) => {
                         }
                     }, koan),
 
-                    React.createElement("div", { style: { width: "1px", height: "48px", background: "linear-gradient(to bottom, transparent, #eebd2b, transparent)", opacity: 0.5, marginTop: "24px" }}),
+                    // [MODIFIED] Reduced Divider Height 48px -> 40px
+                    React.createElement("div", { style: { width: "1px", height: "40px", background: "linear-gradient(to bottom, transparent, #eebd2b, transparent)", opacity: 0.5, marginTop: "24px" }}),
                 ]),
 
                 // Footer

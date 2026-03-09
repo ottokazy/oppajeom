@@ -322,7 +322,30 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
         return `${name}의 괘상을 얻으셨군요. 현재 당신의 상황에 이 괘가 가진 고유한 변화의 힘이 작용하고 있습니다.`;
     };
 
-    const formatActionItem = (text: string) => text.replace(/([.?!])\s+/g, "$1\n\n");
+    // [UPDATED] Action Item Formatting: Replace unexpected newlines inside sentences, but keep paragraphs
+    const formatActionItem = (text: string) => {
+        if (!text) return "";
+        
+        // 1. If it's a title line like "[Subject]", ensure it becomes "[Subject하기]" if simple
+        // This is a safety check if AI misses the prompt instruction
+        let processedText = text;
+        const titleMatch = processedText.match(/^\[(.*?)\]/);
+        if (titleMatch) {
+            const inner = titleMatch[1];
+            if (!inner.endsWith('하기') && !inner.includes(' ')) { // Simple noun check
+                 processedText = processedText.replace(titleMatch[0], `[${inner}하기]`);
+            }
+        }
+
+        // 2. Remove newlines after commas (User Request: "쉼표에서는 줄바꿈을 하지말아줘")
+        // Also consolidate multiple newlines
+        processedText = processedText.replace(/,\s*\n/g, ", ");
+        
+        // 3. Ensure double newline after periods for paragraph separation (Prompt does this, but redundancy is good)
+        // But we rely mainly on the prompt. If the prompt fails, we might want to force it.
+        // Let's trust prompt + simple comma fix for now to avoid breaking poetic structure if valid.
+        return processedText;
+    };
 
     const currentWeek = subscription?.current_week || 1;
     const isFirstWeek = currentWeek === 1;
@@ -474,13 +497,9 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
                             </p>
                         </div>
                         <div className="space-y-3 pt-2">
-                            <button onClick={() => handleLoginAndPay('kakaopay')} disabled={isGenerating} className="w-full py-4 rounded-xl bg-[#FAE100] hover:bg-[#eac900] text-[#371D1E] flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md">
-                                {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="font-bold">카카오페이 결제</span>}
-                            </button>
                             <button onClick={() => handleLoginAndPay('tosspayments')} disabled={isGenerating} className="w-full py-4 rounded-xl bg-[#3282F6] hover:bg-[#2b72d7] text-white flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md">
-                                {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="font-bold">토스페이/카드 결제</span>}
+                                {isGenerating ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="font-bold">결제하기</span>}
                             </button>
-                            <p className="text-[10px] text-gray-500 text-center">* 카카오페이에 등록된 <span className="text-gray-400 font-bold">신용/체크카드</span>도 사용 가능합니다.</p>
                         </div>
                         <p className="text-[10px] text-midnight-sub/40 text-center mt-4">이미 구독 중이신 경우, 결제 없이 바로 입장합니다.</p>
                         <button onClick={() => setView('ONBOARDING')} className="w-full text-midnight-sub text-sm py-2 hover:text-white transition-colors">뒤로 가기</button>
@@ -546,20 +565,21 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
         return (
             <div className="fixed inset-0 z-[100] h-[100dvh] w-full bg-midnight text-midnight-text overflow-y-auto overflow-x-hidden animate-fade-in-very-slow">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-mystic-purple/10 rounded-full blur-[150px] pointer-events-none"></div>
-                <header className="px-6 py-6 flex justify-end items-center sticky top-0 bg-midnight/90 backdrop-blur-md z-20 border-b border-white/5">
+                {/* [MODIFIED] Reduced top/bottom padding from py-6 to py-4 */}
+                <header className="px-6 py-4 flex justify-end items-center sticky top-0 bg-midnight/90 backdrop-blur-md z-20 border-b border-white/5">
                      <button onClick={onClose} className="text-gold/80 hover:text-gold font-bold text-xs tracking-widest uppercase transition-colors">Close</button>
                 </header>
                 {/* [FIX] PC cutoff: Increased bottom padding from pb-24 to pb-32 */}
                 <main className="px-6 pb-32 max-w-md mx-auto pt-8 relative z-10">
-                    <div className="flex justify-center mb-12 transform scale-100 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+                    
+                    {/* 1. Koan Card (Top) */}
+                    <div className="flex justify-center mb-10 transform scale-100 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
                         <KoanCard week={weeklyContent.week} koan={weeklyContent.koan} userName={subscription?.user_name || 'User'} hexagramCode={hexCode} hexagramName={hexHanja} cardRef={null} />
                     </div>
-                    <div className="space-y-10">
-                        <div className="bg-midnight-card p-8 rounded-[24px] border border-gold/10 shadow-2xl relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 p-6 opacity-5 transition-opacity group-hover:opacity-10"><span className="material-symbols-outlined text-8xl text-gold">spa</span></div>
-                            <h3 className="text-[10px] font-bold text-gold uppercase tracking-[0.3em] mb-6 flex items-center gap-3"><span className="w-8 h-[1px] bg-gold/50"></span>Weekly Ritual</h3>
-                            <p className="text-lg font-serif text-midnight-text leading-[2.2] relative z-10 whitespace-pre-wrap font-light">{formatActionItem(weeklyContent.action_item)}</p>
-                        </div>
+
+                    <div className="space-y-12">
+                        
+                        {/* 2. Sage's Reflection (Moved Up) */}
                         <div className="px-2">
                             <h3 className="flex items-center gap-3 text-gold/80 font-serif font-bold mb-6 text-xl"><span className="material-symbols-outlined text-lg">auto_awesome</span>현자의 성찰</h3>
                             <div className="relative">
@@ -567,16 +587,29 @@ export const ProgramMode: React.FC<ProgramModeProps> = ({ userContext, lines, on
                                 <p className="text-midnight-sub leading-[2.0] text-justify font-serif text-[16px] font-light pl-6 whitespace-pre-wrap">{weeklyContent.reflection}</p>
                             </div>
                         </div>
-                        
-                        {/* Warning Text */}
-                        <p className="text-center text-midnight-sub/60 text-[10px] mt-8 mb-2 leading-relaxed">
-                            ⚠️ 이 페이지를 나가면 조언 내용이 사라집니다.<br/>
-                            결과를 캡처하거나 화두카드를 받으세요.
-                        </p>
 
-                        <button onClick={downloadCard} disabled={isDownloading} className="w-full bg-midnight-card border border-gold/30 hover:bg-gold/10 text-gold font-bold py-5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group">
-                            {isDownloading ? <><span className="material-symbols-outlined animate-spin text-lg">downloading</span><span className="text-sm font-sans tracking-widest">저장 중...</span></> : <><span className="material-symbols-outlined text-lg group-hover:scale-110 transition-transform">download</span><span className="text-sm font-sans tracking-widest">화두카드 소장하기</span></>}
-                        </button>
+                        {/* 3. Weekly Ritual (Renamed to "이번주 실천하기" & Moved Down) */}
+                        <div className="bg-midnight-card p-8 rounded-[24px] border border-gold/10 shadow-2xl relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-6 opacity-5 transition-opacity group-hover:opacity-10"><span className="material-symbols-outlined text-8xl text-gold">check_circle</span></div>
+                            <h3 className="text-[12px] font-bold text-gold uppercase tracking-[0.2em] mb-6 flex items-center gap-3"><span className="w-8 h-[1px] bg-gold/50"></span>이번주 실천하기</h3>
+                            
+                            {/* Font changed to sans-serif (Gothic) for strict action feel */}
+                            <p className="text-lg font-sans font-medium text-midnight-text leading-[2.2] relative z-10 whitespace-pre-wrap tracking-wide">
+                                {formatActionItem(weeklyContent.action_item)}
+                            </p>
+                        </div>
+                        
+                        {/* Warning Text & Download */}
+                        <div>
+                            <p className="text-center text-midnight-sub/60 text-[10px] mb-4 leading-relaxed">
+                                ⚠️ 이 페이지를 나가면 조언 내용이 사라집니다.<br/>
+                                결과를 캡처하거나 화두카드를 받으세요.
+                            </p>
+
+                            <button onClick={downloadCard} disabled={isDownloading} className="w-full bg-midnight-card border border-gold/30 hover:bg-gold/10 text-gold font-bold py-5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group">
+                                {isDownloading ? <><span className="material-symbols-outlined animate-spin text-lg">downloading</span><span className="text-sm font-sans tracking-widest">저장 중...</span></> : <><span className="material-symbols-outlined text-lg group-hover:scale-110 transition-transform">download</span><span className="text-sm font-sans tracking-widest">화두카드 소장하기</span></>}
+                            </button>
+                        </div>
                     </div>
                 </main>
             </div>

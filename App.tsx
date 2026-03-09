@@ -13,7 +13,7 @@ import { jsPDF } from 'jspdf';
 // 2. 우측 상단의 'Raw' 버튼을 우클릭하거나 클릭하여 '이미지 주소 복사'를 하세요.
 //    (주소가 https://raw.githubusercontent.com/... 으로 시작해야 외부에서 보입니다.)
 // 3. 아래 따옴표("") 안에 복사한 주소를 붙여넣으세요.
-const GITHUB_IMG_URL = "https://raw.githubusercontent.com/ottokazy/oppajeom/main/yin_yang_cat.png"; 
+const GITHUB_IMG_URL = ""; 
 
 // 기본 태극 문양 (이미지가 없을 경우 사용됨)
 const DEFAULT_SVG_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23eebd2b;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23b58900;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='%231a1a1a' stroke='%23eebd2b' stroke-width='1.5'/%3E%3Cpath d='M50,2 A48,48 0 0,1 50,98 A24,24 0 0,1 50,50 A24,24 0 0,0 50,2' fill='url(%23grad)'/%3E%3Ccircle cx='50' cy='26' r='5' fill='%231a1a1a'/%3E%3Ccircle cx='50' cy='74' r='5' fill='%23eebd2b'/%3E%3C/svg%3E";
@@ -59,6 +59,7 @@ const App: React.FC = () => {
   const [programStartView, setProgramStartView] = useState<'ONBOARDING' | 'LOGIN'>('ONBOARDING');
 
   const [isPdfGenerating, setIsPdfGenerating] = useState(false); // PDF Loading State
+  const [isPaymentProcessing, setIsPaymentProcessing] = useState(false); // Payment Loading State
   
   // Premium Q&A State
   const [premiumStep, setPremiumStep] = useState<PremiumStep>(PremiumStep.IDLE);
@@ -276,8 +277,11 @@ const App: React.FC = () => {
       alert("이름과 질문을 입력해주세요.");
       return;
     }
-    // [FIX 1] Reset Analysis Flag on Start
+    // [FIX 1] Reset Analysis Flag and Data on Start
+    // 이전에 남아있던 lines(동전 기록)를 지워야 동전 던지기 단계가 스킵되지 않습니다.
     analysisStartedRef.current = false;
+    setLines([]); 
+    setAnalysis(null);
     setStep(Step.DIVINATION);
   };
 
@@ -460,6 +464,8 @@ const App: React.FC = () => {
           return;
       }
       
+      setIsPaymentProcessing(true);
+      
       // Force Initialize V1 with user code right before payment
       window.IMP.init("imp16601765"); 
       
@@ -473,10 +479,8 @@ const App: React.FC = () => {
       // 1. 현재 주소 가져오기 (쿼리 스트링 제외)
       const currentUrl = window.location.href.split('?')[0];
       
-      // [FIX 3] Mobile Optimized Payment (Redirect)
-      // [SIMPLIFIED] Always use 'kakaopay' now
       window.IMP.request_pay({
-          pg: pgProvider, // 'kakaopay' or 'tosspayments'
+          pg: pgProvider, // 'tosspayments'
           pay_method: "card", // Default
           merchant_uid: `coffee_${new Date().getTime()}`,
           name: "현자에게 커피 한 잔 (심층 질문권)",
@@ -507,6 +511,7 @@ const App: React.FC = () => {
               }
               setPremiumStep(PremiumStep.INPUT);
           }
+          setIsPaymentProcessing(false);
       });
   };
 
@@ -686,7 +691,8 @@ const App: React.FC = () => {
       {premiumStep !== PremiumStep.IDLE && (
           <div className="fixed inset-0 z-[100] h-[100dvh] w-screen bg-[#2a261f] flex flex-col items-center overflow-y-auto animate-fade-in-slow">
               {/* Header - Consistent with ProgramMode */}
-              <div className="w-full max-w-lg px-6 py-6 flex justify-end items-center sticky top-0 bg-[#2a261f]/95 backdrop-blur-md z-20 border-b border-white/5">
+              {/* [MODIFIED] Reduced top/bottom padding from py-6 to py-4 */}
+              <div className="w-full max-w-lg px-6 py-4 flex justify-end items-center sticky top-0 bg-[#2a261f]/95 backdrop-blur-md z-20 border-b border-white/5">
                   <button onClick={() => setPremiumStep(PremiumStep.IDLE)} className="text-[#eebd2b]/80 hover:text-[#eebd2b] font-bold text-xs tracking-widest uppercase transition-colors">
                       CLOSE
                   </button>
@@ -726,27 +732,13 @@ const App: React.FC = () => {
 
                       {/* Payment Buttons - SIMPLIFIED */}
                       <div className="space-y-3 mb-6">
-                          {/* Kakao Pay (Primary) */}
-                          <button 
-                              onClick={() => handlePaymentAndAnalyze('kakaopay')}
-                              disabled={!premiumQuestions.q1 || !premiumQuestions.q2}
-                              className="w-full py-4 rounded-xl bg-[#FAE100] hover:bg-[#eac900] text-[#371D1E] flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                          >
-                              <span className="font-bold">카카오페이 결제</span>
-                          </button>
-
-                          {/* Toss Pay (Secondary) */}
                           <button 
                               onClick={() => handlePaymentAndAnalyze('tosspayments')}
-                              disabled={!premiumQuestions.q1 || !premiumQuestions.q2}
+                              disabled={!premiumQuestions.q1 || !premiumQuestions.q2 || isPaymentProcessing}
                               className="w-full py-4 rounded-xl bg-[#3282F6] hover:bg-[#2b72d7] text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                           >
-                              <span className="font-bold">토스페이/카드 결제</span>
+                              {isPaymentProcessing ? <span className="material-symbols-outlined animate-spin">progress_activity</span> : <span className="font-bold">결제하기</span>}
                           </button>
-                          
-                          <p className="text-[10px] text-gray-500 text-center">
-                              * 카카오페이에 등록된 <span className="text-gray-400 font-bold">신용/체크카드</span>도 사용 가능합니다.
-                          </p>
                       </div>
 
                       <div className="mt-4 flex justify-center">
@@ -1180,8 +1172,8 @@ const App: React.FC = () => {
                 <div className="space-y-4 pt-6 border-t border-white/5">
                     <p className="text-center text-gray-400 text-sm mb-4">더 깊은 통찰이 필요하신가요?</p>
                     
-                    {/* Option A: Coffee & Ask More (One-time) - UPDATED */}
-                    <button 
+                    {/* Option A: Coffee & Ask More (One-time) - HIDDEN FOR PAYMENT REVIEW */}
+                    {/* <button 
                         onClick={handleOpenPremiumInput}
                         className="w-full bg-[#3e3429] border border-[#eebd2b]/30 py-6 rounded-2xl flex items-center justify-between px-6 group hover:bg-[#4a3f33] transition-all shadow-lg"
                     >
@@ -1195,7 +1187,7 @@ const App: React.FC = () => {
                             </div>
                         </div>
                         <span className="material-symbols-outlined text-gray-500 group-hover:text-[#eebd2b]">arrow_forward_ios</span>
-                    </button>
+                    </button> */}
 
                     {/* Option B: Monthly Care (Subscription) - UPDATED TEXT */}
                     <button 
